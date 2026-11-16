@@ -1,7 +1,7 @@
 /**
- * Three independent switches, mirroring the sibling MCP servers: the
- * container env decides what the server will ever do, and the gateway's
- * group/duty model decides who may call which tool.
+ * Independent switches: the server environment decides what the server will
+ * ever do, and an authenticating gateway in front decides who may call which
+ * tool.
  *
  * - TELGEA_ENABLE_WRITES: users, teams, cost thresholds, suspension and data
  *   restriction directly; and the two-step prepare/commit for what costs

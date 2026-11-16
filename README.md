@@ -2,6 +2,8 @@
 
 MCP server for the [Telgea](https://telgea.com) Open API ([reference](https://developer.telgea.com), [OpenAPI spec](https://api.telgea.com/openapi.json)), a business mobile operator with eSIM-based plans. It covers users and teams, user plans, lines and eSIMs, live connection status, number port-ins, usage records and analytics, data pools, rates and cost thresholds.
 
+This is an independent, unofficial project. It is not developed, endorsed or supported by Telgea.
+
 ## Tools
 
 | Tier | Tools |
@@ -53,8 +55,30 @@ TELGEA_TRUST_FORWARDED_USER=true
 TELGEA_AUDIT_LOG=/data/audit.jsonl
 TELGEA_BUDGET_STATE=/data/budget.json
 TELGEA_OPERATION_SECRET=…          # openssl rand -hex 32
-MCP_HTTP_TOKEN=…                   # shared with the gateway
+MCP_HTTP_TOKEN=…                   # shared with the gateway; openssl rand -hex 32
 ```
+
+`TELGEA_DAILY_REQUEST_BUDGET`, `TELGEA_CACHE_TTL_MS` and `TELGEA_TIMEOUT_MS` must be plain integers; an invalid value stops the server at startup instead of silently disabling the limit.
+
+### HTTP transport
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MCP_HTTP_HOST` / `HOST` | `127.0.0.1` | Bind address. |
+| `PORT` | `3000` | Listen port. |
+| `MCP_HTTP_TOKEN` | – | Bearer token required on `/mcp`. At least 32 printable ASCII characters, e.g. `openssl rand -hex 32`. Required for any non-loopback bind and with `MCP_ALLOW_ANY_ORIGIN=true`. |
+| `MCP_HTTP_ALLOW_UNAUTHENTICATED` | `false` | Serve a non-loopback bind without a token (only when access is restricted by other means). |
+| `MCP_ALLOWED_ORIGINS` | localhost origins | Comma-separated exact `Origin` values allowed. Requests without `Origin` (server-to-server) are allowed. |
+| `MCP_ALLOW_ANY_ORIGIN` | `false` | Allow every origin (requires `MCP_HTTP_TOKEN`). |
+| `MCP_ALLOWED_HOSTS` | – | Comma-separated host names accepted in the `Host` header. Without it, a loopback bind only accepts localhost names and no check is done on other binds. |
+| `MCP_MAX_BODY_BYTES` | `10485760` | Maximum request body. |
+| `MCP_AUTH_FAILURE_LIMIT` | `20` | Failed authentication attempts per client address and window before further failures get 429; `0` disables. Valid tokens are never throttled. |
+| `MCP_AUTH_FAILURE_WINDOW_MS` | `60000` | Window for the limit above. |
+
+`GET /healthz` answers `{"status":"ok"}` without authentication. 401 responses carry
+`WWW-Authenticate: Bearer`; invalid JSON gets 400. The server shuts down gracefully on SIGTERM/SIGINT.
+
+`TELGEA_TRUST_FORWARDED_USER=true` always requires `MCP_HTTP_TOKEN`, also with `MCP_HTTP_ALLOW_UNAUTHENTICATED=true`.
 
 ## Deployment
 
@@ -65,6 +89,14 @@ The server runs as one container behind an authenticating MCP gateway that forwa
 | IT / telecom admins | the endpoint itself |
 | who may commit two-step changes | duty group on `telgea_commit_prepared_operation` |
 | who may see eSIM activation codes | duty group on `telgea_get_sim_credentials` (and `TELGEA_ENABLE_SIM_SECRETS=true`) |
+
+## Security model
+
+- The server calls Telgea with one shared, organisation-scoped API key. Every caller acts with that key's permissions; the forwarded user (`X-MCP-User`) is recorded in the audit log and bound to prepared operations, but Telgea itself only sees the key.
+- Per-user authorization belongs in an identity-aware gateway in front of this server. `MCP_HTTP_TOKEN` only authenticates that gateway; it must strip `X-MCP-User` from client traffic and set it itself.
+- Tool access is not data access: the switches and gateway rules limit which tools can be called, not what the API key can read.
+- The HTTP server does not terminate TLS. Run it on a private network or behind a TLS-terminating proxy.
+- Upstream redirects are never followed, so `x-api-key` is only sent to `TELGEA_BASE_URL`. Error bodies are read up to 64 KB, the key is redacted before error text is truncated, and error URLs omit query strings.
 
 ## Run
 
