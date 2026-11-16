@@ -98,6 +98,14 @@ The server runs as one container behind an authenticating MCP gateway that forwa
 - The HTTP server does not terminate TLS. Run it on a private network or behind a TLS-terminating proxy.
 - Upstream redirects are never followed, so `x-api-key` is only sent to `TELGEA_BASE_URL`. Error bodies are read up to 64 KB, the key is redacted before error text is truncated, and error URLs omit query strings.
 
+## Install
+
+```bash
+npx mcp-server-telgea
+```
+
+Runs the stdio server from npm. Configure it with the environment variables in `.env.example`.
+
 ## Run
 
 ```bash

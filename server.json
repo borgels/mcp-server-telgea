@@ -1,0 +1,59 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.borgels/mcp-server-telgea",
+  "title": "Telgea",
+  "description": "MCP server for the Telgea mobile operator API: users, lines, eSIMs, usage and cost thresholds.",
+  "repository": {
+    "url": "https://github.com/borgels/mcp-server-telgea",
+    "source": "github"
+  },
+  "version": "0.2.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "mcp-server-telgea",
+      "version": "0.2.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "TELGEA_API_KEY",
+          "description": "Telgea organisation API key.",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "TELGEA_DAILY_REQUEST_BUDGET",
+          "description": "Requests allowed per rolling 24 hours.",
+          "format": "number",
+          "default": "1000"
+        },
+        {
+          "name": "TELGEA_BUDGET_STATE",
+          "description": "Path of a file that keeps the request budget across restarts.",
+          "format": "filepath"
+        },
+        {
+          "name": "TELGEA_ENABLE_WRITES",
+          "description": "Enable the write tools.",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
+          "name": "TELGEA_ENABLE_SIM_SECRETS",
+          "description": "Enable the tool that returns eSIM activation codes and PIN/PUK.",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
+          "name": "TELGEA_AUDIT_LOG",
+          "description": "Path of the JSONL audit log.",
+          "format": "filepath"
+        }
+      ]
+    }
+  ]
+}
