@@ -58,7 +58,7 @@ TELGEA_OPERATION_SECRET=…          # openssl rand -hex 32
 MCP_HTTP_TOKEN=…                   # shared with the gateway; openssl rand -hex 32
 ```
 
-`TELGEA_DAILY_REQUEST_BUDGET`, `TELGEA_CACHE_TTL_MS` and `TELGEA_TIMEOUT_MS` must be plain integers; an invalid value stops the server at startup instead of silently disabling the limit.
+`TELGEA_DAILY_REQUEST_BUDGET` (at least 1), `TELGEA_CACHE_TTL_MS` (0-86400000, 0 disables the cache) and `TELGEA_TIMEOUT_MS` (1-600000) must be plain integers; an invalid or out-of-range value stops the server at startup instead of silently disabling the limit.
 
 ### HTTP transport
 

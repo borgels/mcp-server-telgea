@@ -14,6 +14,9 @@
   `MCP_MAX_BODY_BYTES` and the boolean `MCP_*` flags are validated as integers /
   booleans; invalid values stop the server at startup. A blank
   `TELGEA_DAILY_REQUEST_BUDGET` now means the default (1000).
+- Ranges: `TELGEA_DAILY_REQUEST_BUDGET` at least 1, `TELGEA_CACHE_TTL_MS` 0-86400000
+  (24 hours), `TELGEA_TIMEOUT_MS` 1-600000 (10 minutes). A larger value that was
+  previously accepted now stops the server at startup.
 - The HTTP server validates the Telgea client configuration at startup.
 - New optional variables: `MCP_HTTP_ALLOW_UNAUTHENTICATED`, `MCP_ALLOWED_HOSTS`,
   `MCP_AUTH_FAILURE_LIMIT`, `MCP_AUTH_FAILURE_WINDOW_MS`.
