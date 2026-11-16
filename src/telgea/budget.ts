@@ -1,4 +1,5 @@
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { ConfigError, readEnvInteger, readEnvString } from '../config-env.js';
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -31,16 +32,18 @@ export class RequestBudget {
     private readonly statePath?: string,
     private readonly now: () => number = Date.now,
   ) {
-    if (!Number.isFinite(limit) || limit < 1) {
-      throw new Error('TELGEA_DAILY_REQUEST_BUDGET must be a positive number.');
+    if (!Number.isSafeInteger(limit) || limit < 1) {
+      throw new ConfigError('TELGEA_DAILY_REQUEST_BUDGET must be a positive integer.');
     }
     this.load();
   }
 
   static fromEnv(env: NodeJS.ProcessEnv = process.env): RequestBudget {
+    // A malformed value stops the server instead of silently disabling the
+    // budget (Number('abc') is NaN, and `used >= NaN` is always false).
     return new RequestBudget(
-      Number(env.TELGEA_DAILY_REQUEST_BUDGET ?? 1000),
-      env.TELGEA_BUDGET_STATE || undefined,
+      readEnvInteger('TELGEA_DAILY_REQUEST_BUDGET', 1000, { min: 1 }, env),
+      readEnvString('TELGEA_BUDGET_STATE', env),
     );
   }
 

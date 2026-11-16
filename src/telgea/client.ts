@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { TelgeaHttpError } from '../errors.js';
+import { ConfigError, readEnvInteger } from '../config-env.js';
+import { describeUrl, registerSecret, TelgeaHttpError } from '../errors.js';
 import { RequestBudget } from './budget.js';
 
 export interface TelgeaClientOptions {
@@ -29,6 +30,10 @@ export interface RequestOptions {
 }
 
 const IDEMPOTENCY_KEY = /^[!-~]{1,255}$/;
+/** Error responses are read up to this many bytes. */
+const MAX_ERROR_BODY_BYTES = 64 * 1024;
+const MAX_TIMEOUT_MS = 10 * 60 * 1000;
+const MAX_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Client for the Telgea Open API (https://api.telgea.com/v1). Auth is one
@@ -48,11 +53,19 @@ export class TelgeaClient {
 
   constructor(options: TelgeaClientOptions = {}) {
     this.apiKey = options.apiKey ?? process.env.TELGEA_API_KEY;
+    registerSecret(this.apiKey);
     this.baseUrl = trimTrailingSlash(options.baseUrl ?? process.env.TELGEA_BASE_URL ?? 'https://api.telgea.com');
     assertSafeBaseUrl(this.baseUrl);
     this.fetchImpl = options.fetchImpl ?? fetch;
-    this.timeoutMs = options.timeoutMs ?? Number(process.env.TELGEA_TIMEOUT_MS ?? 30_000);
-    this.cacheTtlMs = options.cacheTtlMs ?? Number(process.env.TELGEA_CACHE_TTL_MS ?? 60_000);
+    this.timeoutMs = options.timeoutMs ?? readEnvInteger('TELGEA_TIMEOUT_MS', 30_000, { max: MAX_TIMEOUT_MS });
+    this.cacheTtlMs =
+      options.cacheTtlMs ?? readEnvInteger('TELGEA_CACHE_TTL_MS', 60_000, { min: 0, max: MAX_CACHE_TTL_MS });
+    if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 1) {
+      throw new ConfigError('timeoutMs must be a positive integer.');
+    }
+    if (!Number.isSafeInteger(this.cacheTtlMs) || this.cacheTtlMs < 0) {
+      throw new ConfigError('cacheTtlMs must be a non-negative integer.');
+    }
     this.retryDelayMs = options.retryDelayMs ?? 1_000;
     this.budget = options.budget ?? RequestBudget.fromEnv();
   }
@@ -131,9 +144,16 @@ export class TelgeaClient {
       response = await this.fetchOnce(url, init);
     }
 
-    const responseBody = await readResponseBody(response);
+    if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+      void response.body?.cancel().catch(() => undefined);
+      throw new Error(
+        `Telgea API responded with a redirect (HTTP ${response.status}) for ${method} ${describeUrl(url)}; ` +
+          'redirects are not followed. Check TELGEA_BASE_URL.',
+      );
+    }
 
     if (!response.ok) {
+      const responseBody = await readErrorBody(response);
       throw new TelgeaHttpError({
         status: response.status,
         url,
@@ -142,6 +162,7 @@ export class TelgeaClient {
       });
     }
 
+    const responseBody = await readResponseBody(response);
     if (method === 'GET' && this.cacheTtlMs > 0) {
       this.cache.set(url, { at: Date.now(), value: structuredClone(responseBody) });
     }
@@ -151,7 +172,9 @@ export class TelgeaClient {
 
   private async fetchOnce(url: string, init: RequestInit): Promise<Response> {
     this.budget.consume();
-    return this.fetchImpl(url, { ...init, signal: AbortSignal.timeout(this.timeoutMs) });
+    // Never follow redirects: fetch would re-send the custom x-api-key header
+    // to wherever the Location points, including other origins.
+    return this.fetchImpl(url, { ...init, redirect: 'manual', signal: AbortSignal.timeout(this.timeoutMs) });
   }
 }
 
@@ -172,6 +195,56 @@ export function pathSegment(value: string, name = 'id'): string {
     throw new Error(`Invalid ${name}: ${JSON.stringify(value)}`);
   }
   return encodeURIComponent(trimmed);
+}
+
+/** Read at most `limit` bytes of the body; cancels the rest and reports whether it was longer. */
+async function readUpTo(response: Response, limit: number): Promise<{ bytes: Uint8Array; exceeded: boolean }> {
+  if (!response.body) {
+    return { bytes: new Uint8Array(0), exceeded: false };
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let exceeded = false;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    if (total + value.byteLength > limit) {
+      chunks.push(value.subarray(0, limit - total));
+      total = limit;
+      exceeded = true;
+      await reader.cancel().catch(() => undefined);
+      break;
+    }
+    chunks.push(value);
+    total += value.byteLength;
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { bytes, exceeded };
+}
+
+/** Error bodies are read up to a small limit; JSON is parsed only when complete. */
+async function readErrorBody(response: Response): Promise<unknown> {
+  const { bytes, exceeded } = await readUpTo(response, MAX_ERROR_BODY_BYTES);
+  const text = new TextDecoder().decode(bytes);
+  if (!text) {
+    return null;
+  }
+  if (exceeded) {
+    return text;
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
 }
 
 async function readResponseBody(response: Response): Promise<unknown> {
