@@ -98,6 +98,37 @@ The server runs as one container behind an authenticating MCP gateway that forwa
 - The HTTP server does not terminate TLS. Run it on a private network or behind a TLS-terminating proxy.
 - Upstream redirects are never followed, so `x-api-key` is only sent to `TELGEA_BASE_URL`. Error bodies are read up to 64 KB, the key is redacted before error text is truncated, and error URLs omit query strings.
 
+## Embedding (`./gateway`)
+
+`mcp-server-telgea/gateway` is an embeddable entry point in the shape of `mcp-server-template`, for a host (such as an MCP gateway that does its own per-user authorization) that runs one instance per organisation:
+
+```ts
+import { createTelgeaGateway, telgeaToolCatalog } from 'mcp-server-telgea/gateway';
+
+const gateway = createTelgeaGateway({
+  apiKey,                       // the organisation's Telgea API key; required, never read from the environment
+  timeoutMs: 30_000,            // optional, per request
+  policy: { enableWrites: true, disabledTools: [], audit: record => log(record) },
+});
+gateway.tools;                                                  // tools enabled on this instance
+await gateway.callTool('list_lines', { state: 'SUSPENDED' }, { caller: 'user-17' });
+```
+
+- **Only what the host gives.** The key comes from the host; the instance reads no `TELGEA_*` variable (key, base URL, timeout, cache, request budget, tier switches, audit log). It talks to `https://api.telgea.com` only, never follows a redirect and keeps no cache between calls.
+- **Host policy.** `enableWrites` (default false), `disabledTools` (must name gateway tools) and `audit` (a sink that receives every audit record; without it none are written). A tool runs only after its start record was accepted. The caller is written as an HMAC pseudonym, the target as a hash and an error as a fixed code (`http_<status>`, `timeout`, `error`).
+- **Our own words.** An HTTP error starts `Telgea API request failed with HTTP <status> (<method>).` with our hint and `retry-after`; Telgea's body is never read. An answer that is not JSON is refused.
+- **Key admission and the sink check.** A key must be printable ASCII of at least 16 characters and share no 6-character piece with this package's own texts. Every result, error and audit record is redacted and checked in its final form; one that still holds a piece of the key is replaced by a fixed text.
+- **Catalog.** `telgeaToolCatalog` (deeply frozen) lists every tool with its definition, the Telgea requests it may make (`upstream`) and `broad` (false for all).
+
+### Gateway tools
+
+| Kind | Tools |
+| --- | --- |
+| Read (enabled by default) | `search_capabilities`, `check_connection`, `list_users`, `list_teams`, `list_user_plans`, `get_user_plan` (by userId, email or phone number), `list_lines`, `get_line`, `get_usage_analytics`, `list_data_pools`, `list_data_pool_members`, `list_rates`, `list_cost_thresholds`, `get_user_cost_threshold` |
+| Write (off by default) | `set_cost_threshold`, `set_data_restriction` (restrict or restore), `set_line_suspension` (suspend or restore) |
+
+Every answer is projected onto an allowlist of fields. Never returned: the SIM of a line (ICCID, eSIM activation code, PIN, PUK) or its previous SIMs. Not in the gateway at all: SIM credentials, number port-ins, raw usage records (single calls and messages), live network data (IMEI, serving network), ordering, terminating or swapping plans, lines and SIMs, creating or changing users and teams, and removing a cost threshold. Nothing deletes; each change can be undone with the same tool.
+
 ## Install
 
 ```bash

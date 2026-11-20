@@ -1,12 +1,16 @@
 {
   "name": "mcp-server-telgea",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "mcpName": "io.github.borgels/mcp-server-telgea",
   "description": "MCP server for the Telgea mobile operator API: users, teams, user plans, lines/eSIMs, port-ins, usage, analytics, data pools, rates and cost thresholds.",
   "type": "module",
   "main": "./dist/transports/stdio.js",
   "exports": {
-    ".": "./dist/transports/stdio.js"
+    ".": "./dist/transports/stdio.js",
+    "./gateway": {
+      "types": "./dist/gateway.d.ts",
+      "default": "./dist/gateway.js"
+    }
   },
   "files": [
     "dist",
@@ -19,7 +23,7 @@
     "mcp-server-telgea": "./dist/transports/stdio.js"
   },
   "scripts": {
-    "build": "tsup src/transports/stdio.ts src/transports/http.ts src/server.ts --format esm --dts --clean --sourcemap",
+    "build": "tsup src/transports/stdio.ts src/transports/http.ts src/server.ts src/gateway.ts --format esm --dts --clean --sourcemap",
     "dev": "tsx src/transports/stdio.ts",
     "dev:http": "tsx src/transports/http.ts",
     "typecheck": "tsc --noEmit",
