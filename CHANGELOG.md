@@ -4,6 +4,13 @@
 
 - Published to npm and the MCP Registry from tagged releases.
 
+## 0.3.0
+
+- New package export `./gateway` in the shape of `mcp-server-template`: `createTelgeaGateway`, `telgeaGatewayTools` and the frozen `telgeaToolCatalog` (with `upstream` and `broad`). The key comes only from the host, no `TELGEA_*` variable is read, the address is fixed to `https://api.telgea.com`, redirects are never followed, and there is no cache or budget between calls.
+- Host policy (writes, disabled tools, audit sink), a call scope per call, redaction per instance, key admission and the sink check.
+- 14 narrow reads and 3 reversible changes (cost threshold, data restriction, line suspension). Answers are projected onto allowlisted fields: SIM data (ICCID, activation code, PIN, PUK) is never returned, and SIM credentials, port-ins, raw usage records, live network data, orders, terminations and deletions are not in the gateway.
+- The MCP server's own tools are unchanged.
+
 ## 0.2.0
 
 ### Upgrade notes
