@@ -4,6 +4,10 @@
 
 - Published to npm and the MCP Registry from tagged releases.
 
+## 0.4.0
+
+- Gateway error results carry failure metadata: when Telgea answered with an HTTP error or a redirect (which is not followed), the result has `failure: { httpStatus, requestId? }`, so a host can count failures by status without reading their text. `requestId` is Telgea's id from a response header (`REQUEST_ID_HEADERS`), never from the body, kept only when it is a hex id of 8 to 64 characters (one run of hex digits, or groups of four or more joined by single hyphens, as in a UUID) and does not hold the shape of a personal number. It is checked again after redaction, so an id that shared a piece with the key is dropped. Never the body, Telgea's error code or message. The helpers are in `src/errors.ts` (`vendorRequestId`, `requestIdFrom`, `failureMetadata`).
+
 ## 0.3.0
 
 - New package export `./gateway` in the shape of `mcp-server-template`: `createTelgeaGateway`, `telgeaGatewayTools` and the frozen `telgeaToolCatalog` (with `upstream` and `broad`). The key comes only from the host, no `TELGEA_*` variable is read, the address is fixed to `https://api.telgea.com`, redirects are never followed, and there is no cache or budget between calls.

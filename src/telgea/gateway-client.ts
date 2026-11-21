@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { requestIdFrom, TelgeaAnswerError } from '../errors.js';
 import type { SecretRedactor } from '../upstream-http.js';
 
 /**
@@ -51,15 +52,16 @@ const SHOWN_NETWORK_CODES: ReadonlySet<string> = new Set([
   'ERR_TLS_CERT_ALTNAME_INVALID',
 ]);
 
-/** An HTTP error from Telgea in our own words: the status, our hint and a retry-after; never Telgea's body. */
-export class TelgeaGatewayHttpError extends Error {
-  readonly status: number;
-  constructor(status: number, method: string, retryAfter?: string) {
+/**
+ * An HTTP error from Telgea in our own words: the status, our hint and a retry-after; never Telgea's body. The
+ * request id (from a response header, only as a UUID or hex id) is kept for failure metadata, never in the message.
+ */
+export class TelgeaGatewayHttpError extends TelgeaAnswerError {
+  constructor(status: number, method: string, retryAfter?: string, requestId?: string) {
     const hint = Object.hasOwn(STATUS_HINTS, status) ? ` ${STATUS_HINTS[status]}` : '';
     const wait = retryAfter ? ` Retry after ${retryAfter} seconds.` : '';
-    super(`Telgea API request failed with HTTP ${status} (${method}).${hint}${wait}`);
+    super(`Telgea API request failed with HTTP ${status} (${method}).${hint}${wait}`, status, requestId);
     this.name = 'TelgeaHttpError';
-    this.status = status;
   }
 }
 
@@ -139,12 +141,21 @@ export class TelgeaGatewayClient {
 
     if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
       await discard(response);
-      throw new Error(`Telgea API responded with a redirect (HTTP ${response.status}) for ${method}; redirects are not followed.`);
+      throw new TelgeaAnswerError(
+        `Telgea API responded with a redirect (HTTP ${response.status}) for ${method}; redirects are not followed.`,
+        response.status,
+        requestIdFrom(response.headers),
+      );
     }
     if (!response.ok) {
       // The body is never read: Telgea's text never becomes part of an error.
       await discard(response);
-      throw new TelgeaGatewayHttpError(response.status, method, wholeNumber(response.headers.get('retry-after')));
+      throw new TelgeaGatewayHttpError(
+        response.status,
+        method,
+        wholeNumber(response.headers.get('retry-after')),
+        requestIdFrom(response.headers),
+      );
     }
 
     let read: { bytes: Uint8Array; exceeded: boolean };

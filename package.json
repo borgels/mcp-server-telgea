@@ -1,6 +1,6 @@
 {
   "name": "mcp-server-telgea",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "mcpName": "io.github.borgels/mcp-server-telgea",
   "description": "MCP server for the Telgea mobile operator API: users, teams, user plans, lines/eSIMs, port-ins, usage, analytics, data pools, rates and cost thresholds.",
   "type": "module",

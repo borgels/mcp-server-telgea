@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod/v4';
+import { failureMetadata, vendorRequestId, type FailureMetadata } from './errors.js';
 import { fixedOutputs, withheldResult } from './fallbacks.js';
 import { admitsKey, KEY_REFUSED, leaksSecret, maskedText, sealedError } from './key-admission.js';
 import { redactDeep, redactText } from './redaction.js';
@@ -67,10 +68,19 @@ export interface GatewayToolDefinition {
   inputSchema: GatewayJsonObject;
 }
 
+/**
+ * Metadata about a failed call, on an error result whose cause is known: the HTTP status Telgea answered with,
+ * and its request id when a response header gives one as a UUID or hex id. For a host that counts failures without
+ * reading their text. Never the response body, Telgea's error code or message, or the input.
+ */
+export type GatewayFailure = FailureMetadata;
+
 export interface GatewayToolResult {
   content: Array<{ type: 'text'; text: string }>;
   structuredContent?: GatewayJsonValue;
   isError?: boolean;
+  /** On an error result from the upstream API only: its HTTP status and request id (see GatewayFailure). */
+  failure?: GatewayFailure;
 }
 
 /** Who and which request a call belongs to; written to the audit records of the call. */
@@ -279,7 +289,8 @@ function buildTelgeaGateway(options: TelgeaGatewayOptions, apiKey: string, redac
         },
         () =>
           runCall(toolName, input).then(result => {
-            const final = result.isError ? (redactDeep(result, redactor) as GatewayToolResult) : result;
+            // An error result is redacted as a whole, its failure metadata checked again after that.
+            const final = result.isError ? withFailureInForm(redactDeep(result, redactor) as GatewayToolResult) : result;
             // The sink check, as the very last step: a result that holds a piece of the key anywhere is withheld whole.
             return leaksSecret(final, redactor) ? withheldResult() : final;
           }),
@@ -323,7 +334,7 @@ function buildTelgeaGateway(options: TelgeaGatewayOptions, apiKey: string, redac
       // Twice: the second pass, the last step, also covers what the first inserted (the depth placeholder).
       return jsonResult(tool.summary, redactDeep(redactDeep(data, redactor), redactor));
     } catch (error) {
-      return errorResult(redactText(error instanceof Error ? error.message : String(error), redactor));
+      return errorResult(redactText(error instanceof Error ? error.message : String(error), redactor), failureMetadata(error));
     }
   }
 }
@@ -377,6 +388,19 @@ function jsonResult(text: string, structuredContent: unknown): GatewayToolResult
   };
 }
 
-function errorResult(text: string): GatewayToolResult {
-  return { isError: true, content: [{ type: 'text', text }] };
+function errorResult(text: string, failure?: GatewayFailure): GatewayToolResult {
+  return { isError: true, content: [{ type: 'text', text }], ...(failure ? { failure } : {}) };
+}
+
+/**
+ * The failure metadata as it must be after redaction: on an error result only, a status of 100-599 and a request id
+ * still in the form of one (redaction can have changed it). Anything else is dropped, never passed on.
+ */
+function withFailureInForm(result: GatewayToolResult): GatewayToolResult {
+  const { failure, ...rest } = result;
+  if (!result.isError || failure === undefined || failure === null || typeof failure !== 'object') return rest;
+  const status = failure.httpStatus;
+  if (typeof status !== 'number' || !Number.isInteger(status) || status < 100 || status > 599) return rest;
+  const requestId = vendorRequestId(failure.requestId);
+  return { ...rest, failure: requestId === undefined ? { httpStatus: status } : { httpStatus: status, requestId } };
 }
